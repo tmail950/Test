@@ -5,29 +5,26 @@ jobs:
   vps:
     runs-on: ubuntu-latest
     steps:
-      - name: 🛠️ Install Tmate
-        run: sudo apt-get update && sudo apt-get install tmate -y
-
-      - name: 🛰️ Generating SSH Tunnel
+      - name: 🛠️ Set up Environment
         run: |
-          # Start tmate in the background
-          tmate -S /tmp/tmate.sock new-session -d
-          
-          # Wait a few seconds for the server to generate the link
-          sleep 5
-          
-          # Get the SSH string
-          SSH_LINK=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
+          # Set a password for the user 'runner' so you can log in via Termius
+          echo "runner:silent786" | sudo chpasswd
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+          sudo service ssh start
+
+      - name: 🛰️ Launch Cloudflare Tunnel
+        run: |
+          # Install Cloudflared (The Tunnel Engine)
+          wget https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared-linux-amd64.deb
           
           echo "========================================================="
-          echo "🟢 SILENT TECH VPS IS LIVE!"
+          echo "🟢 SILENT TECH CLOUDFLARE VPS IS STARTING..."
           echo "---------------------------------------------------------"
-          echo "👇 COPY THIS INTO TERMIUS 👇"
+          echo "👇 LOOK FOR THE .trycloudflare.com LINK BELOW 👇"
           echo ""
-          echo "$SSH_LINK"
-          echo ""
-          echo "---------------------------------------------------------"
-          echo "========================================================="
           
-          # Keep the machine alive for 6 hours
-          sleep 21600
+          # Start a quick tunnel for SSH on port 22
+          # We use timeout to stop it after 6 hours
+          timeout 6h cloudflared tunnel --url ssh://localhost:22
