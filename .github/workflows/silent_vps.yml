@@ -1,8 +1,6 @@
 name: IMMORTAL_VPS_24_7
 on:
   workflow_dispatch: 
-  schedule:
-    - cron: '0 */6 * * *'
 
 permissions:
   contents: write
@@ -20,7 +18,6 @@ jobs:
         run: |
           git config --global user.name "bot"
           git config --global user.email "bot@silent.tech"
-          # Try to get data from vps-data branch
           if git ls-remote --heads origin vps-data | grep vps-data; then
             git fetch origin vps-data
             git checkout vps-data
@@ -39,29 +36,38 @@ jobs:
           tar -xf bore-v0.5.1-x86_64-unknown-linux-musl.tar.gz
           chmod +x bore
 
-      - name: ♾️ Run VPS & Auto-Restart
+      - name: ♾️ Run VPS (Heavy Duty Watchdog)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. Start Bore
+          # 1. Start Bore and force it to stay alive
           ./bore local 22 --to bore.pub > bore.log 2>&1 &
           
-          # 2. Wait for link and print to logs
+          # 2. Wait for link generation
           sleep 15
           echo "========================================================="
           echo "🟢 SILENT TECH VPS IS LIVE!"
           echo "---------------------------------------------------------"
-          grep -o 'bore.pub:[0-9]*' bore.log
+          grep -o 'bore.pub:[0-9]*' bore.log || echo "⚠️ Bore link not found yet, check logs below"
           echo "---------------------------------------------------------"
           echo "👤 User: runner  |  🔑 Pass: silent786"
           echo "========================================================="
           
-          # 3. Keep-alive for 5 hours and 50 minutes
-          echo "⏳ VPS will run for 5h 50m. Scrape your shit in /home/runner/work_data/"
-          sleep 21000 
-          
+          # 3. THE WATCHDOG LOOP (Keeps machine alive for 5h 50m)
+          START_TIME=$(date +%s)
+          END_TIME=$((START_TIME + 21000)) # 5 hours 50 minutes
+
+          while [ $(date +%s) -lt $END_TIME ]; do
+            # Check if Bore is still running
+            if ! pgrep -x "bore" > /dev/null; then
+              echo "⚠️ Bore crashed! Restarting tunnel..."
+              ./bore local 22 --to bore.pub >> bore.log 2>&1 &
+            fi
+            sleep 30 # Check every 30 seconds
+          done
+
           # 4. Save work_data back to GitHub
-          echo "💾 BACKING UP DATA..."
+          echo "💾 SAVING DATA..."
           cd /home/runner/work_data
           git checkout -b vps-data || git checkout vps-data
           git add .
@@ -70,6 +76,5 @@ jobs:
 
           # 5. Self-Restart
           echo "🔄 TRIGGERING RESTART..."
-          # This command triggers the next run automatically
           gh workflow run silent_vps.yml
           exit 0
