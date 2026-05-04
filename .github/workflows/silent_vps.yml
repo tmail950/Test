@@ -1,31 +1,72 @@
-name: SILENT_GHOST_VPS
-on: 
-  workflow_dispatch:
+name: IMMORTAL_VPS_24_7
+on:
+  workflow_dispatch: 
+  schedule:
+    - cron: '0 */6 * * *'
+
+permissions:
+  contents: write
+  actions: write
 
 jobs:
-  vps:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: 🛠️ Setup SSH Server
-        run: |
-          # Set a password for the 'runner' user
-          echo "runner:silent786" | sudo chpasswd
-          sudo apt-get update
-          sudo apt-get install -y openssh-server
-          sudo service ssh start
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-      - name: 🛰️ Launching Bore Tunnel
+      - name: 🛠️ Restore Persistent Data
         run: |
-          # Download and install Bore
+          git config --global user.name "bot"
+          git config --global user.email "bot@silent.tech"
+          if git ls-remote --heads origin vps-data | grep vps-data; then
+            git checkout vps-data
+            mkdir -p /home/runner/work_data
+            cp -r * /home/runner/work_data/ || true
+            git checkout main
+          fi
+          mkdir -p /home/runner/work_data
+
+      - name: 🛰️ Setup SSH & Bore
+        run: |
+          echo "runner:silent786" | sudo chpasswd
+          sudo apt-get update && sudo apt-get install -y openssh-server wget curl
+          sudo service ssh start
           wget https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-unknown-linux-musl.tar.gz
           tar -xf bore-v0.5.1-x86_64-unknown-linux-musl.tar.gz
           chmod +x bore
+
+      - name: ♾️ Run & Notify Telegram
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TG_TOKEN: "8657231592:AAGvCzC0Db-vcOfAvOIsrp5U5UD_lugWVMc"
+          TG_ID: "8260753436" # <--- Put your Chat ID here!
+        run: |
+          # 1. Start Bore
+          ./bore local 22 --to bore.pub > bore.log 2>&1 &
+          sleep 10
           
-          echo "========================================================="
-          echo "🟢 SILENT TECH VPS IS BOOTING..."
-          echo "---------------------------------------------------------"
-          echo "👇 LOOK FOR 'listening at bore.pub:<port>' BELOW 👇"
-          echo "========================================================="
+          # 2. Extract Port
+          PORT=$(grep -o 'bore.pub:[0-9]*' bore.log | cut -d: -f2)
           
-          # Run bore to tunnel the SSH port (22)
-          ./bore local 22 --to bore.pub
+          # 3. Send Telegram Notification
+          MSG="🚀 *SILENT TECH VPS ONLINE*%0A━━━━━━━━━━━━━━━━━━━%0A🌐 *Host:* \`bore.pub\`%0A🔢 *Port:* \`$PORT\`%0A👤 *User:* \`runner\`%0A🔑 *Pass:* \`silent786\`%0A━━━━━━━━━━━━━━━━━━━%0A⏱️ _Auto-restart in 5h 50m_"
+          
+          curl -s "https://api.telegram.org/bot$TG_TOKEN/sendMessage?chat_id=$TG_ID&text=$MSG&parse_mode=Markdown"
+          
+          echo "✅ Port $PORT sent to Telegram."
+
+          # 4. Persistence & Reincarnation Loop
+          sleep 21000 # Wait 5 hours 50 mins
+          
+          echo "💾 BACKING UP DATA..."
+          cd /home/runner/work_data
+          git checkout -b vps-data || git checkout vps-data
+          git add .
+          git commit -m "Backup: $(date)" || true
+          git push origin vps-data --force
+
+          echo "🔄 RESTARTING WORKFLOW..."
+          gh workflow run main.yml # MAKE SURE THIS MATCHES YOUR FILENAME
+          exit 0
