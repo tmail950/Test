@@ -27,54 +27,79 @@ jobs:
           fi
           mkdir -p /home/runner/work_data
 
-      - name: 🛰️ Setup SSH & Bore
+      - name: 🛰️ Setup SSH (Stability Patch)
         run: |
+          # 1. Set Password
           echo "runner:silent786" | sudo chpasswd
+          
+          # 2. Configure SSH for high-stability
           sudo apt-get update && sudo apt-get install -y openssh-server wget
-          sudo service ssh start
+          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+          echo "TCPKeepAlive yes" | sudo tee -a /etc/ssh/sshd_config
+          echo "ClientAliveInterval 30" | sudo tee -a /etc/ssh/sshd_config
+          echo "ClientAliveCountMax 100" | sudo tee -a /etc/ssh/sshd_config
+          
+          # 3. Restart Service
+          sudo service ssh restart
+
+          # 4. Install Bore
           wget https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-unknown-linux-musl.tar.gz
           tar -xf bore-v0.5.1-x86_64-unknown-linux-musl.tar.gz
           chmod +x bore
 
-      - name: ♾️ Run VPS (Heavy Duty Watchdog)
+      - name: ♾️ Run VPS (Anti-Crash Edition)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. Start Bore and force it to stay alive
+          # 1. Start Bore in the background
           ./bore local 22 --to bore.pub > bore.log 2>&1 &
           
-          # 2. Wait for link generation
+          # 2. Wait for link and clear log clutter
           sleep 15
           echo "========================================================="
           echo "🟢 SILENT TECH VPS IS LIVE!"
           echo "---------------------------------------------------------"
-          grep -o 'bore.pub:[0-9]*' bore.log || echo "⚠️ Bore link not found yet, check logs below"
+          # Find and print the port clearly
+          PORT_LINE=$(grep -o 'bore.pub:[0-9]*' bore.log)
+          if [ -z "$PORT_LINE" ]; then
+             echo "⚠️ Bore starting... Refresh logs in 10 seconds."
+          else
+             echo "🚀 CONNECT TO: $PORT_LINE"
+          fi
           echo "---------------------------------------------------------"
           echo "👤 User: runner  |  🔑 Pass: silent786"
           echo "========================================================="
           
-          # 3. THE WATCHDOG LOOP (Keeps machine alive for 5h 50m)
+          # 3. THE WATCHDOG + HEARTBEAT
+          # This keeps the CPU active so GitHub doesn't sleep the process
           START_TIME=$(date +%s)
           END_TIME=$((START_TIME + 21000)) # 5 hours 50 minutes
 
           while [ $(date +%s) -lt $END_TIME ]; do
-            # Check if Bore is still running
+            # Ensure SSH is still running
+            sudo service ssh status > /dev/null || sudo service ssh restart
+            
+            # Ensure Bore is still running
             if ! pgrep -x "bore" > /dev/null; then
-              echo "⚠️ Bore crashed! Restarting tunnel..."
               ./bore local 22 --to bore.pub >> bore.log 2>&1 &
             fi
-            sleep 30 # Check every 30 seconds
+            
+            # Heartbeat: Print time remaining to logs
+            REMAINING=$(( ($END_TIME - $(date +%s)) / 60 ))
+            echo "⚡ Heartbeat: VPS Active. $REMAINING mins until auto-restart."
+            
+            sleep 60 # Check every minute
           done
 
-          # 4. Save work_data back to GitHub
+          # 4. Save work_data
           echo "💾 SAVING DATA..."
           cd /home/runner/work_data
           git checkout -b vps-data || git checkout vps-data
           git add .
-          git commit -m "Backup: $(date)" || true
+          git commit -m "Auto-Backup" || true
           git push origin vps-data --force
 
-          # 5. Self-Restart
-          echo "🔄 TRIGGERING RESTART..."
-          gh workflow run silent_vps.yml
+          # 5. Reincarnation
+          gh workflow run $(basename $GITHUB_WORKFLOW)
           exit 0
