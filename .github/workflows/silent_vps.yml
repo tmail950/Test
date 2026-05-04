@@ -5,16 +5,29 @@ jobs:
   vps:
     runs-on: ubuntu-latest
     steps:
-      - name: 🛠️ Install Tmate & Force Tunnel
+      - name: 🛠️ Install Tmate
+        run: sudo apt-get update && sudo apt-get install tmate -y
+
+      - name: 🛰️ Generating SSH Tunnel
         run: |
-          sudo apt-get update && sudo apt-get install tmate -y
+          # Start tmate in the background
           tmate -S /tmp/tmate.sock new-session -d
-          tmate -S /tmp/tmate.sock wait-for-connection
+          
+          # Wait a few seconds for the server to generate the link
+          sleep 5
+          
+          # Get the SSH string
+          SSH_LINK=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
+          
           echo "========================================================="
-          echo "🚀 CONNECTION READY!"
+          echo "🟢 SILENT TECH VPS IS LIVE!"
           echo "---------------------------------------------------------"
-          tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}'
+          echo "👇 COPY THIS INTO TERMIUS 👇"
+          echo ""
+          echo "$SSH_LINK"
+          echo ""
           echo "---------------------------------------------------------"
           echo "========================================================="
-          # Keep it alive for 6 hours
+          
+          # Keep the machine alive for 6 hours
           sleep 21600
