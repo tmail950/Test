@@ -20,10 +20,12 @@ jobs:
         run: |
           git config --global user.name "bot"
           git config --global user.email "bot@silent.tech"
+          # Check if vps-data branch exists, if so pull it
           if git ls-remote --heads origin vps-data | grep vps-data; then
+            git fetch origin vps-data
             git checkout vps-data
             mkdir -p /home/runner/work_data
-            cp -r * /home/runner/work_data/ || true
+            cp -r . /home/runner/work_data/ || true
             git checkout main
           fi
           mkdir -p /home/runner/work_data
@@ -41,25 +43,33 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TG_TOKEN: "8657231592:AAGvCzC0Db-vcOfAvOIsrp5U5UD_lugWVMc"
-          TG_ID: "8260753436" # <--- Put your Chat ID here!
+          TG_ID: "8260753436"
         run: |
           # 1. Start Bore
           ./bore local 22 --to bore.pub > bore.log 2>&1 &
-          sleep 10
+          sleep 15
           
           # 2. Extract Port
           PORT=$(grep -o 'bore.pub:[0-9]*' bore.log | cut -d: -f2)
+          
+          if [ -z "$PORT" ]; then
+            echo "❌ Failed to get port from Bore. Checking logs..."
+            cat bore.log
+            exit 1
+          fi
           
           # 3. Send Telegram Notification
           MSG="🚀 *SILENT TECH VPS ONLINE*%0A━━━━━━━━━━━━━━━━━━━%0A🌐 *Host:* \`bore.pub\`%0A🔢 *Port:* \`$PORT\`%0A👤 *User:* \`runner\`%0A🔑 *Pass:* \`silent786\`%0A━━━━━━━━━━━━━━━━━━━%0A⏱️ _Auto-restart in 5h 50m_"
           
           curl -s "https://api.telegram.org/bot$TG_TOKEN/sendMessage?chat_id=$TG_ID&text=$MSG&parse_mode=Markdown"
           
-          echo "✅ Port $PORT sent to Telegram."
+          echo "✅ Port $PORT sent to Telegram ID $TG_ID"
 
-          # 4. Persistence & Reincarnation Loop
-          sleep 21000 # Wait 5 hours 50 mins
+          # 4. Wait for 5 hours and 50 mins
+          echo "⏳ VPS is running. Scrape your shit now..."
+          sleep 21000 
           
+          # 5. Backup to vps-data branch
           echo "💾 BACKING UP DATA..."
           cd /home/runner/work_data
           git checkout -b vps-data || git checkout vps-data
@@ -67,6 +77,8 @@ jobs:
           git commit -m "Backup: $(date)" || true
           git push origin vps-data --force
 
+          # 6. Reincarnation (Auto-triggering this same file)
           echo "🔄 RESTARTING WORKFLOW..."
-          gh workflow run main.yml # MAKE SURE THIS MATCHES YOUR FILENAME
+          # This 'basename' command finds the exact name of this current file
+          gh workflow run $(basename $GITHUB_WORKFLOW)
           exit 0
