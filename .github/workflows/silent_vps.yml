@@ -1,14 +1,19 @@
 name: SILENT_GHOST_VPS
 on: [push, workflow_dispatch]
+
 jobs:
-  build:
+  vps:
     runs-on: ubuntu-latest
     steps:
-     - uses: actions/checkout@v3
-     - name: Start SSH Tunnel
-       run: |
-         curl -L -o tmate.tar.xz https://github.com/tmate-io/tmate/releases/download/2.4.0/tmate-2.4.0-static-linux-amd64.tar.xz
-         tar -xf tmate.tar.xz
-         ./tmate-2.4.0-static-linux-amd64/tmate -S /tmp/tmate.sock new-session -d
-         ./tmate-2.4.0-static-linux-amd64/tmate -S /tmp/tmate.sock wait-for-connection
-         # This prints the SSH string for Termius in the GitHub Logs!
+      - uses: actions/checkout@v3
+
+      - name: 🛰️ Launching SSH Tunnel
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: false # Allows you to connect from any device/Termius
+
+      - name: ♾️ Keep Alive Loop
+        run: |
+          echo "VPS is live. Use the SSH link above in Termius."
+          # This ensures the build doesn't end even if you disconnect
+          while sleep 1; do :; done
