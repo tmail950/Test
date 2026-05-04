@@ -16,19 +16,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 🛠️ Restore Persistent Data
+      - name: 🛠️ Setup Environment & Restore Data
         run: |
           git config --global user.name "bot"
           git config --global user.email "bot@silent.tech"
-          # Check if vps-data branch exists, if so pull it
+          
+          # 1. Create a dedicated storage folder
+          mkdir -p storage
+          
+          # 2. Try to pull existing data from vps-data branch
           if git ls-remote --heads origin vps-data | grep vps-data; then
             git fetch origin vps-data
-            git checkout vps-data
-            mkdir -p /home/runner/work_data
-            cp -r . /home/runner/work_data/ || true
-            git checkout main
+            git checkout origin/vps-data -- . || true
+            echo "✅ Previous data restored into /storage"
           fi
-          mkdir -p /home/runner/work_data
 
       - name: 🛰️ Setup SSH & Bore
         run: |
@@ -47,38 +48,37 @@ jobs:
         run: |
           # 1. Start Bore
           ./bore local 22 --to bore.pub > bore.log 2>&1 &
-          sleep 15
+          sleep 20
           
           # 2. Extract Port
           PORT=$(grep -o 'bore.pub:[0-9]*' bore.log | cut -d: -f2)
           
           if [ -z "$PORT" ]; then
-            echo "❌ Failed to get port from Bore. Checking logs..."
-            cat bore.log
-            exit 1
+            echo "❌ Bore failed. Retrying..."
+            ./bore local 22 --to bore.pub > bore.log 2>&1 &
+            sleep 20
+            PORT=$(grep -o 'bore.pub:[0-9]*' bore.log | cut -d: -f2)
           fi
           
-          # 3. Send Telegram Notification
+          # 3. Send Telegram
           MSG="🚀 *SILENT TECH VPS ONLINE*%0A━━━━━━━━━━━━━━━━━━━%0A🌐 *Host:* \`bore.pub\`%0A🔢 *Port:* \`$PORT\`%0A👤 *User:* \`runner\`%0A🔑 *Pass:* \`silent786\`%0A━━━━━━━━━━━━━━━━━━━%0A⏱️ _Auto-restart in 5h 50m_"
-          
           curl -s "https://api.telegram.org/bot$TG_TOKEN/sendMessage?chat_id=$TG_ID&text=$MSG&parse_mode=Markdown"
           
-          echo "✅ Port $PORT sent to Telegram ID $TG_ID"
+          echo "✅ Port $PORT is live. START YOUR SCRAPERS NOW."
 
           # 4. Wait for 5 hours and 50 mins
-          echo "⏳ VPS is running. Scrape your shit now..."
           sleep 21000 
           
-          # 5. Backup to vps-data branch
-          echo "💾 BACKING UP DATA..."
-          cd /home/runner/work_data
-          git checkout -b vps-data || git checkout vps-data
-          git add .
-          git commit -m "Backup: $(date)" || true
+          # 5. Backup Data (The Real Way)
+          echo "💾 BACKING UP DATA TO GITHUB..."
+          git checkout --orphan vps-data
+          git rm -rf . --cached > /dev/null
+          # Only save what is in the storage folder
+          git add storage/
+          git commit -m "Persistent Backup: $(date)" || true
           git push origin vps-data --force
 
-          # 6. Reincarnation (Auto-triggering this same file)
+          # 6. Reincarnation
           echo "🔄 RESTARTING WORKFLOW..."
-          # This 'basename' command finds the exact name of this current file
-          gh workflow run $(basename $GITHUB_WORKFLOW)
+          gh workflow run silent_vps.yml
           exit 0
