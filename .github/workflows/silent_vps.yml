@@ -1,0 +1,14 @@
+name: SILENT_GHOST_VPS
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+     - uses: actions/checkout@v3
+     - name: Start SSH Tunnel
+       run: |
+         curl -L -o tmate.tar.xz https://github.com/tmate-io/tmate/releases/download/2.4.0/tmate-2.4.0-static-linux-amd64.tar.xz
+         tar -xf tmate.tar.xz
+         ./tmate-2.4.0-static-linux-amd64/tmate -S /tmp/tmate.sock new-session -d
+         ./tmate-2.4.0-static-linux-amd64/tmate -S /tmp/tmate.sock wait-for-connection
+         # This prints the SSH string for Termius in the GitHub Logs!
